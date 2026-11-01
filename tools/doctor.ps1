@@ -42,7 +42,6 @@ Write-Host "Edge/CDP workspace health check  -  $root" -ForegroundColor Cyan
 Write-Host ('-' * 68) -ForegroundColor DarkGray
 
 # --- 1. node ---------------------------------------------------------------
-$nodeOk = $false
 try {
     $nv = (& node -v 2>$null | Out-String).Trim()
     if ($LASTEXITCODE -ne 0 -or -not $nv) { throw 'node -v failed' }
@@ -57,7 +56,7 @@ try {
             Write-Row 'node' 'fail' "$nv - global WebSocket missing, cdp.mjs cannot run"
             $problems.Add('node lacks WebSocket')
         }
-        else { Write-Row 'node' 'ok' "$nv, WebSocket available"; $nodeOk = $true }
+        else { Write-Row 'node' 'ok' "$nv, WebSocket available" }
     }
 }
 catch {
@@ -170,9 +169,19 @@ if ($verdict -eq 'RUNNING') {
         # and the array itself passes as a single item. Result: the count was always 1.
         $raw = Invoke-RestMethod -Uri "$base/json/list" -TimeoutSec 3 -ErrorAction Stop
         $pages = @($raw | Where-Object { $_.type -eq 'page' -and -not ([string]$_.url).StartsWith('devtools://') })
+        # Count real claims, not record files: an adopted tab keeps its record after the
+        # last owner releases it, so counting files overstates who holds what.
         $claims = 0
-        try { $claims = @(Get-ChildItem -LiteralPath (Join-Path $root 'var\tabs') -Filter *.json -ErrorAction Stop).Count } catch {}
-        Write-Row 'tabs' 'ok' "$($pages.Count) page(s), $claims claimed"
+        $records = @()
+        try { $records = @(Get-ChildItem -LiteralPath (Join-Path $root 'var\tabs') -Filter *.json -ErrorAction Stop) } catch {}
+        foreach ($f in $records) {
+            try {
+                $rec = Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+                if ($rec.claims) { $claims += @($rec.claims.PSObject.Properties).Count }
+            }
+            catch {}
+        }
+        Write-Row 'tabs' 'ok' "$($pages.Count) page(s), $claims claim(s), $($records.Count) record(s)"
     }
     catch { Write-Row 'tabs' 'warn' 'could not list tabs' }
 }
@@ -217,5 +226,4 @@ if ($problems.Count -gt 0) {
     exit 1
 }
 
-if (-not $nodeOk) { exit 1 }
 exit 0

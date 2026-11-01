@@ -37,9 +37,11 @@ agent 自己起不来，请**让用户双击 `tools\start-edge.cmd`**——从�
 
 1. **只动自己的页签。** 多页签而无 `--tab` 时，`cdp.mjs` 会拒绝猜测并列候选——看到就补 `--tab`，不要关别人的。
    要借用别人的页面，先 `claim --tab 我的名字 --target <id>` 认领一份引用，再动手；改之前先 `log` 看别人做过什么。
-2. **绝不调 `Browser.close`，绝不 `close` 别人的 id。** 那会连坐整台浏览器，所有人一起断。
+2. **绝不调 `Browser.close`；`close` 只释放自己那份引用。** 认领计数没清零就不会关页签。
+   `--target` 硬关只用于清理**没人认领**的页签——还有认领者时客户端会直接拒绝，那不是限制，是防手滑。
 3. **不读 `var\profile\`。** 那里是登录态，等同密码。要判断登录状态就读页面文字，不要导出 cookie。
-4. **9222 只绑 127.0.0.1。** 不转发、不加 `--remote-debugging-address`、不开隧道。
+4. **9222 只绑 127.0.0.1。** `--remote-debugging-address` 只能是 `127.0.0.1`（`start-edge.ps1` 就是这么传的），
+   绝不能是 `0.0.0.0` 或局域网地址；不做端口转发、不开隧道。
 5. **结束只释放自己的引用**（`node tools\cdp.mjs close --tab 我的名字`），**不关浏览器**——别人还要用。
    页签被多人认领时 `close` 只减计数；计数清零才真关，而且只关本工作区 `newtab` 出来的页签，
    认领来的页面永远不替你关。
@@ -86,7 +88,7 @@ agent 自己起不来，请**让用户双击 `tools\start-edge.cmd`**——从�
 2. **只用 PowerShell 5.1 语法。** 别用 `??`、`?.`、三元运算符——5.1 不支持。
 3. **沙箱只允许写 `var\` 下面。** `tools\` 和根目录文件对子进程是只读的（实测）。所以日志、profile、产物、
    页签记录全在 `var\` 里——新加的东西也别往外放。
-4. **改完必须真跑一次。** `powershell -NoProfile -File tools\doctor.ps1` 能跑通才算改完。
+4. **改完必须真跑一次。** `powershell -NoProfile -ExecutionPolicy Bypass -File tools\doctor.ps1` 能跑通才算改完。
    "看着对"不算：本次就有两个脚本纸面上完全正确、一跑就炸。
 
 ## 目录

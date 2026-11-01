@@ -9,8 +9,8 @@ whenToUse: 内容必须靠真实浏览器渲染、登录态或页面 JS 才能�
 先确认三件事都在，再动手。跳过检查的代价是：命令报"连不上"，而你以为是网络问题。
 
 ```powershell
-powershell -NoProfile -File tools\doctor.ps1        # 体检：node / Edge / 端口 / profile 锁
-powershell -NoProfile -File tools\start-edge.ps1    # 已跑就复用，没跑就起一个
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\doctor.ps1        # 体检：node / Edge / 端口 / profile 锁
+powershell -NoProfile -ExecutionPolicy Bypass -File tools\start-edge.ps1    # 已跑就复用，没跑就起一个
 node tools/cdp.mjs newtab --tab alice https://你要去的地址
 ```
 
@@ -85,8 +85,8 @@ node tools/cdp.mjs --tab alice log
 
 | 报错 | 含义 | 处理 |
 |---|---|---|
-| `连不上 http://127.0.0.1:9222` | 浏览器没在跑 | `powershell -NoProfile -File tools\start-edge.ps1` |
-| `8 秒无响应` | 端口被陈旧进程占着，服务是死的 | `powershell -NoProfile -File tools\stop-edge.ps1` 后重起 |
+| `连不上 http://127.0.0.1:9222` | 浏览器没在跑 | `powershell -NoProfile -ExecutionPolicy Bypass -File tools\start-edge.ps1` |
+| `8 秒无响应` | 端口被陈旧进程占着，服务是死的 | `powershell -NoProfile -ExecutionPolicy Bypass -File tools\stop-edge.ps1` 后重起 |
 | `有 N 个页签，且没给 --tab` | 保护性拒绝 | 补 `--tab <你的名字>` |
 | `页签 "x" 已经不在了` | 页签被关或浏览器重开过 | 重新 `newtab --tab x <url>` |
 | `没有匹配 "..." 的 frame` | `--frame` 片段不对 | 先 `frames` 看真实 URL |

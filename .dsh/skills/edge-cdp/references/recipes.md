@@ -80,8 +80,13 @@ node tools/cdp.mjs --tab alice --frame /ananas/modules/video/ text
 ```
 
 `--frame` 的值要在 frame 列表里**唯一**，匹配多个会报错并列候选。
-`--frame` 只影响读命令（`text` / `html` / `eval`）；要在 iframe 内部点或填，用 `eval` 在 frame 里做，
-坐标点击只对主文档有效。
+
+`--frame` 只对**读**命令有效：`text` / `html` / `eval`（`wait` 也不进 frame）。
+`click` / `fill` 不接受 `--frame`，只作用于主文档——iframe 里点按钮、填输入框，目前只有一条退路：
+在 frame 里用 `eval` 派发 DOM 事件。
+
+这条退路有代价：`el.click()` 对监听真实鼠标事件的单页应用/课件常常无效（见 pitfalls #5）。
+iframe 里的东西点不动时别硬试——找到它绑定的处理函数用 `eval` 触发，或者反馈让 `click` 支持 `--frame`。
 
 ## 7. 判断是否还登录着
 
