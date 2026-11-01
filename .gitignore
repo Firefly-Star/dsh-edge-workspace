@@ -1,0 +1,13 @@
+# 浏览器 profile：含登录态与 cookie，等同密码，绝不入库
+var/profile/
+
+# 运行时状态与产物（沙箱只允许写 var\ 下面，日志也在里面）
+var/
+
+# 本地覆盖（本机私有约定，不共享）
+AGENTS.local.md
+CLAUDE.local.md
+
+# 临时文件
+*.tmp
+*.log
