@@ -22,6 +22,8 @@ node tools/cdp.mjs newtab --tab alice https://你要去的地址
 |---|---|
 | 看现在有哪些页签、谁认领了 | `node tools/cdp.mjs tabs` |
 | 认领一个新页签 | `node tools/cdp.mjs newtab --tab 名字 <url>` |
+| 认领一个**已有**页签 | `node tools/cdp.mjs claim --tab 名字 --target <id>` |
+| 看这个页签谁动过、动了什么 | `node tools/cdp.mjs --tab 名字 log` |
 | 我现在在哪个页面 | `node tools/cdp.mjs --tab 名字 whoami` |
 | 跳转并等就绪 | `node tools/cdp.mjs --tab 名字 nav <url>` |
 | 取正文 | `node tools/cdp.mjs --tab 名字 text` |
@@ -34,9 +36,31 @@ node tools/cdp.mjs newtab --tab alice https://你要去的地址
 | 填输入框 | `node tools/cdp.mjs --tab 名字 fill "<css>" "文本"` |
 | 等元素/等文字 | `node tools/cdp.mjs --tab 名字 wait "<css>"` / `wait --text "已完成"` |
 | 截图 | `node tools/cdp.mjs --tab 名字 shot var/artifacts/x.png` |
-| 收工 | `node tools/cdp.mjs close --tab 名字` |
+| 收工 | `node tools/cdp.mjs close --tab 名字`（只释放你那份引用） |
 
 退出码：`0` 成功，`1` 出错（stderr 带 `ERROR:`），`2` 用法错，`3` 是 `wait` 超时未命中。
+
+## 共享页签：引用计数 + 操作流水
+
+一个页签可以被**多个名字同时认领**（`claims` 的键数就是引用计数）。
+
+- `newtab` 开的页签（origin=created）：`close` 把计数减一，**减到 0 才真的关页签**。
+- `claim` 认领来的页签（origin=adopted）：`close` **只释放引用，永远不关页面**——那不是你开的，不能替别人关。
+- 名字已经被占着、且页签还活着 → `newtab` 会拒绝，不会顶掉别人。
+
+**操作流水是机制保证的，不靠 agent 自觉**：`nav / click / fill / eval` 这些改页面的命令，
+客户端在发命令前后各记一笔 `{who, at, cmd, detail, ok}`，写进 `var/tabs/<id>.json`。
+`text / html / whoami / frames / shot` 是只读，不写（否则全是噪声）。
+
+所以**接手一个被别人动过的页签，先 `log` 看一眼**再动手：
+
+```powershell
+node tools/cdp.mjs --tab alice log
+# entries: alice nav https://... / bob click "提交" / alice eval ...
+```
+
+没有 `--tab` 而用 `--target` 改页面时，会打到 stderr 一条告警，并且记成 `who=-`：
+匿名改动也留痕，只是不认领人。并发写同一份记录用文件锁串行化，不会互相覆盖。
 
 ## 标准流程
 
@@ -46,7 +70,7 @@ node tools/cdp.mjs newtab --tab alice https://你要去的地址
 3. **提取**：能用 `text` 就别用 `html`（HTML 体积是正文的几十倍，白烧 token）。
    要结构化数据就用 `eval` 返回数组/对象，`cdp.mjs` 会自动 JSON 化。
 4. **验证**：抓完回头 `whoami` 确认 URL 没被重定向跑偏；数量对得上再往下写。
-5. **收尾**：产物写 `var/artifacts/`，`close --tab` 释放页签。
+5. **收尾**：产物写 `var/artifacts/`，`close --tab` 释放你那份引用——还有别人认领就不关页签。
 
 ## 判据与红线
 

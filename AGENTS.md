@@ -23,7 +23,8 @@ node tools\cdp.mjs --tab 我的名字 shot var\artifacts\a.png
 ```
 
 > **`CDP_TARGET` 那类环境变量在 DSH 里跨命令不保留**——每条命令都是新进程。
-> 别用 `$env:CDP_TARGET = ...` 的老写法，用 `--tab <名字>`，它从 `var\tabs\<名字>.json` 读。
+> 别用 `$env:CDP_TARGET = ...` 的老写法，用 `--tab <名字>`：记录在 `var\tabs\<页签id>.json`，
+> 里面写着哪些名字认领了这个页签、以及谁在什么时候动过它。
 > `--tab` 指到的页签没了会明确报错，不会静默落到别人的页签上。
 
 如果 `start-edge.ps1` 报**受限沙箱**（日志里 `platform_channel.cc:187`）：
@@ -35,10 +36,13 @@ agent 自己起不来，请**让用户双击 `tools\start-edge.cmd`**——从�
 ## 红线
 
 1. **只动自己的页签。** 多页签而无 `--tab` 时，`cdp.mjs` 会拒绝猜测并列候选——看到就补 `--tab`，不要关别人的。
+   要借用别人的页面，先 `claim --tab 我的名字 --target <id>` 认领一份引用，再动手；改之前先 `log` 看别人做过什么。
 2. **绝不调 `Browser.close`，绝不 `close` 别人的 id。** 那会连坐整台浏览器，所有人一起断。
 3. **不读 `var\profile\`。** 那里是登录态，等同密码。要判断登录状态就读页面文字，不要导出 cookie。
 4. **9222 只绑 127.0.0.1。** 不转发、不加 `--remote-debugging-address`、不开隧道。
-5. **结束关自己的页签**（`node tools\cdp.mjs close --tab 我的名字`），**不关浏览器**——别人还要用。
+5. **结束只释放自己的引用**（`node tools\cdp.mjs close --tab 我的名字`），**不关浏览器**——别人还要用。
+   页签被多人认领时 `close` 只减计数；计数清零才真关，而且只关本工作区 `newtab` 出来的页签，
+   认领来的页面永远不替你关。
 
 ## 这个工作区的性质（先搞清，别搞错）
 
@@ -93,7 +97,7 @@ agent 自己起不来，请**让用户双击 `tools\start-edge.cmd`**——从�
 | `tools\doctor.ps1` `start-edge.*` `stop-edge.*` | 体检 / 启动 / 关闭。`.cmd` 是给用户双击的 |
 | `var\profile\` | 浏览器配置＝登录态。gitignored，别碰 |
 | `var\artifacts\` | 截图、导出。产物一律放这里，别撒在根目录 |
-| `var\tabs\` | 页签认领记录 |
+| `var\tabs\` | 页签认领记录 + 操作流水（`<页签id>.json`，多人共享时按引用计数） |
 | `var\logs\` | Edge 启动日志（排查受限沙箱就看它） |
 | `.dsh\skills\edge-cdp\` | 操作手册，按需加载（配方、完整坑列表、报错对照） |
 

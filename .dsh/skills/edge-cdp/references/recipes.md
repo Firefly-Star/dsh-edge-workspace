@@ -1,6 +1,6 @@
 # 配方
 
-都要先有：`pwsh tools/doctor.ps1` 通过 + 自己的页签（下面用 `alice` 代替你的名字）。
+都要先有：`powershell -NoProfile -ExecutionPolicy Bypass -File tools\doctor.ps1` 通过 + 自己的页签（下面用 `alice` 代替你的名字）。
 
 ## 1. 取正文（选择器兜底）
 

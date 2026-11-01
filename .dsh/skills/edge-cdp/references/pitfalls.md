@@ -12,7 +12,8 @@ ERROR: 8 秒无响应。端口可能被陈旧进程占着
 Chromium 的多进程 IPC 建不起来，进程在 `platform_channel.cc:187` 抛 `Access denied (0x5)` 后崩掉。
 于是出现"能连上、零字节返回"这种特别像网络问题的现象。
 
-**做法**：`pwsh tools/doctor.ps1` 会明确标「陈旧端口」；`pwsh tools/stop-edge.ps1` 清掉再起。
+**做法**：`powershell -NoProfile -ExecutionPolicy Bypass -File tools\doctor.ps1` 会明确标「陈旧端口」；
+`powershell -NoProfile -ExecutionPolicy Bypass -File tools\stop-edge.ps1` 清掉再起。
 判断服务活没活的唯一可靠依据是 `/json/version` 有没有返回 JSON，不是端口状态。
 
 ## 2. agent 自己起浏览器就崩
@@ -24,7 +25,7 @@ Chromium 的多进程 IPC 建不起来，进程在 `platform_channel.cc:187` 抛
 
 ## 3. `$env:CDP_TARGET` 设了却没用
 
-**原因**：DSH 里每条命令都是新的 pwsh 进程，环境变量不跨调用保留。
+**原因**：DSH 里每条命令都是新的 powershell 进程，环境变量不跨调用保留。
 上一次会话那种"先设变量再跑命令"的写法，只有把两件事塞进**同一次**调用才成立，非常脆。
 
 **做法**：用 `--tab <名字>`，认领记录落在 `var/tabs/<名字>.json`，跨进程、跨会话都在。
