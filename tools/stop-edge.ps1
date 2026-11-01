@@ -133,4 +133,18 @@ if ($after -lt 0) {
 }
 
 Write-Act 'Port released.' 'Green'
+
+# Browser is fully down: archive tab records that no longer belong to a live page.
+# Only done here (and by 'cdp.mjs prune') - never while pages are still open.
+if (-not $Quiet) {
+    $nodeCmd = Get-Command node -ErrorAction SilentlyContinue
+    if ($nodeCmd) {
+        try {
+            Write-Host 'Archiving tab records of closed pages...' -ForegroundColor DarkGray
+            & $nodeCmd.Source (Join-Path $PSScriptRoot 'cdp.mjs') prune | Out-String | Write-Host
+        }
+        catch { Write-Host 'Archive step skipped (cdp.mjs prune failed).' -ForegroundColor DarkYellow }
+    }
+}
+
 exit 0

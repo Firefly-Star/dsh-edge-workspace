@@ -23,7 +23,7 @@ node tools/cdp.mjs newtab --tab alice https://你要去的地址
 | 看现在有哪些页签、谁认领了 | `node tools/cdp.mjs tabs` |
 | 认领一个新页签 | `node tools/cdp.mjs newtab --tab 名字 <url>` |
 | 认领一个**已有**页签 | `node tools/cdp.mjs claim --tab 名字 --target <id>` |
-| 看这个页签谁动过、动了什么 | `node tools/cdp.mjs --tab 名字 log` |
+| 看这个页签谁动过、动了什么 | `node tools/cdp.mjs --tab 名字 log`（默认末尾 20 条，`--all` 全给） |
 | 我现在在哪个页面 | `node tools/cdp.mjs --tab 名字 whoami` |
 | 跳转并等就绪 | `node tools/cdp.mjs --tab 名字 nav <url>` |
 | 取正文 | `node tools/cdp.mjs --tab 名字 text` |
@@ -37,6 +37,7 @@ node tools/cdp.mjs newtab --tab alice https://你要去的地址
 | 等元素/等文字 | `node tools/cdp.mjs --tab 名字 wait "<css>"` / `wait --text "已完成"` |
 | 截图 | `node tools/cdp.mjs --tab 名字 shot var/artifacts/x.png` |
 | 收工 | `node tools/cdp.mjs close --tab 名字`（只释放你那份引用） |
+| 浏览器整个关掉后归档旧记录 | `node tools/cdp.mjs prune`（`stop-edge.ps1` 会自动跑一次） |
 
 退出码：`0` 成功，`1` 出错（stderr 带 `ERROR:`），`2` 用法错，`3` 是 `wait` 超时未命中。
 
@@ -55,12 +56,19 @@ node tools/cdp.mjs newtab --tab alice https://你要去的地址
 所以**接手一个被别人动过的页签，先 `log` 看一眼**再动手：
 
 ```powershell
-node tools/cdp.mjs --tab alice log
-# entries: alice nav https://... / bob click "提交" / alice eval ...
+node tools/cdp.mjs --tab alice log          # 末尾 20 条
+node tools/cdp.mjs --tab alice log --all    # 全部（流水不截断，你自己决定看多少）
 ```
 
-没有 `--tab` 而用 `--target` 改页面时，会打到 stderr 一条告警，并且记成 `who=-`：
-匿名改动也留痕，只是不认领人。并发写同一份记录用文件锁串行化，不会互相覆盖。
+**改页面必须带 `--tab`**：`nav / click / fill / eval` 不带 `--tab` 会被直接拒绝——改动要有责任人，
+不能记成 `who=-`。只读命令（`text / html / whoami / frames / shot`）可以只用 `--target` 随手看。
+
+并发写同一份记录用文件锁串行化，不会互相覆盖。
+
+**记录文件坏了会说话**：带 BOM 不带 BOM 都能解析；实在解析不了的，`tabs` 会列出
+`{file, corrupt: true, reason}`，用 `--tab` 时也会提示——不会假装这个认领不存在。
+`prune` 只归档「无人认领且页签已消失」的记录到 `var/tabs/archive/`，不删除；浏览器整个关掉时
+归档才彻底，`stop-edge.ps1` 会顺手跑一次。
 
 ## 标准流程
 

@@ -23,7 +23,6 @@ const ROOT = path.resolve(HERE, '..');
 const BASE = (process.env.CDP_BASE || 'http://127.0.0.1:9222').replace(/\/+$/, '');
 const TABS_DIR = path.join(ROOT, 'var', 'tabs');
 const ARTIFACTS = path.join(ROOT, 'var', 'artifacts');
-const LOG_CAP = 50;          // 每个页签最多留多少条流水
 const LOCK_TIMEOUT = 3000;   // 等记录锁的上限
 
 // 下游把管道关掉（例如 | Select-Object -First 1）时安静退出，别抛未捕获异常再去抢锁。
@@ -38,8 +37,11 @@ const USAGE = `用法：
                             认领一个**已经存在**的页签（可以多人认领同一个）
   close --tab <名字>        释放自己那份引用；还有别人认领就只是减计数，
                             计数清零才真的关闭页签
-  tabs                      列出页签、认领者、以及失效的认领记录
-  log --tab <名字>          看这个页签的操作流水（谁·何时·做了什么）
+  tabs                      列出页签、认领者、已失效的记录、以及损坏的记录文件
+  log --tab <名字> [--limit N | --all]
+                            看操作流水（默认末尾 20 条；--all 全给）
+  prune                     归档"无人认领且页签已消失"的记录到 var/tabs/archive/
+                            （浏览器整个关掉后归档才彻底，stop-edge 会自动跑一次）
 
 页面操作：
   whoami                    当前页签的 title / url / readyState / 认领者
@@ -60,8 +62,8 @@ const USAGE = `用法：
   node tools/cdp.mjs --tab bob log
   node tools/cdp.mjs close --tab bob        # bob 退出，alice 还留着，页签不关
 
-记账规则：nav / click / fill / eval 会改页面，一律写进操作流水（无论有没有认领）；
-text / html / whoami / frames / shot 是只读，不写。` + '\n';
+记账规则：nav / click / fill / eval 会改页面，必须带 --tab（改动要有责任人），并且一律记进流水；
+text / html / whoami / frames / shot 是只读，可以只用 --target 随手看。` + '\n';
 
 // ── 参数 ────────────────────────────────────────────────────────────────
 function parseArgs(argv) {
@@ -141,31 +143,40 @@ function normalizeRecord(raw) {
   return rec;
 }
 
+// 读文件时先剥 BOM：Windows PowerShell 5.1 的 Set-Content -Encoding UTF8 会写 BOM，
+// 而 JSON.parse 见到 BOM 直接抛。带 BOM / 不带 BOM 都要能解析。
+function stripBom(text) { return text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text; }
+
 function readRecord(id) {
   const f = recFile(id);
   if (!fs.existsSync(f)) return null;
   let raw;
-  try { raw = JSON.parse(fs.readFileSync(f, 'utf8')); }
-  catch { throw new Error(`认领记录损坏：${f}（删掉它，重新 newtab 或 claim 一次即可）`); }
-  return normalizeRecord(raw);
+  try { raw = JSON.parse(stripBom(fs.readFileSync(f, 'utf8'))); }
+  catch { throw new Error(`认领记录损坏：${f}（删掉或改名留档，再重新 newtab / claim）`); }
+  const rec = normalizeRecord(raw);
+  if (!rec) throw new Error(`认领记录不可用（没有 id 字段）：${f}`);
+  return rec;
 }
 
-// 读出目录下所有记录；顺手把旧格式的文件名迁移成 <id>.json
+// 读出目录下所有记录。解析不了的文件不再装作不存在：收进 corrupt 列表，由调用方报出来。
+// 顺手把旧格式的文件名迁移成 <id>.json
 function loadAll() {
-  const map = new Map();
+  const byId = new Map();
+  const corrupt = [];
   let files = [];
-  try { files = fs.readdirSync(TABS_DIR); } catch { return map; }
+  try { files = fs.readdirSync(TABS_DIR); } catch { return { byId, corrupt }; }
   for (const f of files) {
     if (!f.endsWith('.json')) continue;
     const full = path.join(TABS_DIR, f);
     let raw;
-    try { raw = JSON.parse(fs.readFileSync(full, 'utf8')); } catch { continue; }
+    try { raw = JSON.parse(stripBom(fs.readFileSync(full, 'utf8'))); }
+    catch (e) { corrupt.push({ file: f, reason: trim(e.message, 70) }); continue; }
     const rec = normalizeRecord(raw);
-    if (!rec) continue;
-    map.set(rec.id, rec);
+    if (!rec) { corrupt.push({ file: f, reason: '没有可用的 id 字段' }); continue; }
+    byId.set(rec.id, rec);
     if (f !== `${rec.id}.json`) { try { writeJsonAtomic(recFile(rec.id), rec); fs.unlinkSync(full); } catch {} }
   }
-  return map;
+  return { byId, corrupt };
 }
 
 function writeJsonAtomic(file, obj) {
@@ -222,7 +233,7 @@ function updateRecord(id, mutator) {
     rec.id = id;
     rec.updatedAt = nowIso();
     if (!Array.isArray(rec.log)) rec.log = [];
-    if (rec.log.length > LOG_CAP) rec.log = rec.log.slice(-LOG_CAP);
+    // 不截断流水：历史完整性比文件大小重要，输出多少条由 log 命令自己决定。
     writeJsonAtomic(recFile(id), rec);
     return rec;
   } finally { releaseLock(lock); }
@@ -243,7 +254,10 @@ function note(id, who, cmd, detail, ok, errText) {
     }
     updateRecord(id, (rec) => {
       if (!rec) return rec;
-      rec.log.push({ at: nowIso(), who, cmd, detail: trim(detail), ok: ok !== false, ...(errText ? { error: trim(errText, 160) } : {}) });
+      const at = nowIso();
+      rec.log.push({ at, who, cmd, detail: trim(detail), ok: ok !== false, ...(errText ? { error: trim(errText, 160) } : {}) });
+      // lastUsed 是真更新的：prune / 僵尸认领判断靠它，不能只写个 since 糊弄人
+      if (who && rec.claims && rec.claims[who]) rec.claims[who].lastUsed = at;
       return rec;
     });
   } catch (e) {
@@ -254,7 +268,8 @@ function note(id, who, cmd, detail, ok, errText) {
 
 // 按名字找它认领的那个活页签；顺手清掉指向已消失页签的认领。
 async function claimByName(name) {
-  const recs = [...loadAll().values()].filter((r) => r.claims && r.claims[name]);
+  const { byId } = loadAll();
+  const recs = [...byId.values()].filter((r) => r.claims && r.claims[name]);
   if (recs.length === 0) return null;
   const pages = await listPages();
   const alive = [];
@@ -366,7 +381,13 @@ async function resolvePage(opts) {
 
   if (opts.tab) {
     const rec = await claimByName(opts.tab);
-    if (!rec) throw new Error(`名字 "${opts.tab}" 没有认领任何活着的页签。新建：newtab --tab ${opts.tab} <url>；认领已有的：claim --tab ${opts.tab} --target <id>`);
+    if (!rec) {
+      const { corrupt } = loadAll();
+      const hint = corrupt.length
+        ? `\n注意：var/tabs 里有 ${corrupt.length} 个损坏的记录文件（${corrupt.map((c) => c.file).join(', ')}），归属可能不可靠，先跑 tabs 看看。`
+        : '';
+      throw new Error(`名字 "${opts.tab}" 没有认领任何活着的页签。新建：newtab --tab ${opts.tab} <url>；认领已有的：claim --tab ${opts.tab} --target <id>${hint}`);
+    }
     const hit = pages.find((p) => p.id === rec.id);
     if (!hit) throw new Error(`页签 "${opts.tab}" 已经不在了（${rec.id}）。重新认领：claim --tab ${opts.tab} --target <id>`);
     return hit;
@@ -386,10 +407,12 @@ async function resolvePage(opts) {
 async function withPage(opts, action, fn) {
   const page = await resolvePage(opts);
   const who = opts.tab && typeof opts.tab === 'string' ? opts.tab : '-';
+  // 只读操作可以 --target 随手看；改页面的操作必须有认领，事后能追到人。
   if (!opts.tab && MUTATING.has(action.cmd)) {
-    const rec = readRecord(page.id);
-    const others = ownersOf(rec);
-    if (others.length) console.error(`WARN: 页签 ${page.id} 被 ${others.join(', ')} 认领着，你没有 --tab，这次改动会记成 who=-`);
+    throw new Error(
+      `改页面的命令（${action.cmd}）必须带 --tab <名字>，否则这次改动没有责任人。\n` +
+      `先认领：node tools/cdp.mjs claim --tab 我的名字 --target ${page.id}`
+    );
   }
   const s = await Session.open(page.webSocketDebuggerUrl, num(opts.timeout, 30000));
   try {
@@ -452,7 +475,7 @@ function pngSize(buf) {
   return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
 }
 
-// 会改页面的命令：一律留痕（没有认领就建一条匿名记录）
+// 会改页面的命令：必须认领（withPage 里拦），并且一律留痕
 const MUTATING = new Set(['nav', 'click', 'fill', 'eval', 'newtab', 'claim', 'close']);
 
 // ── 主流程 ───────────────────────────────────────────────────────────────
@@ -465,16 +488,18 @@ try {
 
   if (cmd === 'tabs') {
     const pages = await listPages();
-    const recs = loadAll();
+    const { byId, corrupt } = loadAll();
     const live = new Set(pages.map((p) => p.id));
     const rows = pages.map((p) => {
-      const rec = recs.get(p.id);
+      const rec = byId.get(p.id);
       return { id: p.id, owners: ownersOf(rec), lastBy: rec?.log?.length ? rec.log[rec.log.length - 1].who : null, title: p.title, url: p.url };
     });
     // 认领记录还在、页签已经消失的，单独列出来，别假装没事
-    for (const rec of recs.values()) {
+    for (const rec of byId.values()) {
       if (!live.has(rec.id)) rows.push({ id: rec.id, owners: ownersOf(rec), stale: true, title: rec.title || '', url: rec.url || '' });
     }
+    // 解析不了的文件也不许装看不见：归属可能全错，必须让人知道
+    for (const c of corrupt) rows.push({ file: c.file, corrupt: true, reason: c.reason });
     out(rows);
 
   } else if (cmd === 'newtab') {
@@ -486,6 +511,8 @@ try {
 
     const used = await claimByName(name);
     if (used) throw new Error(`名字 "${name}" 已经认领着 "${used.title || used.url}"（${used.id}）。换个名字，或先 close --tab ${name}`);
+    const { corrupt: corruptNew } = loadAll();
+    if (corruptNew.length) console.error(`WARN: var/tabs 里有 ${corruptNew.length} 个损坏的记录文件，可能藏着同名认领：${corruptNew.map((c) => c.file).join(', ')}`);
 
     // 先用 about:blank 建页签，再用 Page.navigate 导航：绕开 /json/new 的 URL 编码坑（? 和 # 会被编掉）。
     const t = await api('/json/new?about:blank', 'PUT');
@@ -524,6 +551,8 @@ try {
     if (!page) throw new Error(`找不到 targetId ${targetId}。现有：\n${pages.map((p) => `  ${p.id}  ${p.title}  ${p.url}`).join('\n')}`);
     const used = await claimByName(name);
     if (used && used.id !== targetId) throw new Error(`名字 "${name}" 已经认领着另一个页签（${used.id}）。先 close --tab ${name} 释放。`);
+    const { corrupt: corruptClaim } = loadAll();
+    if (corruptClaim.length) console.error(`WARN: var/tabs 里有 ${corruptClaim.length} 个损坏的记录文件，可能藏着别的认领：${corruptClaim.map((c) => c.file).join(', ')}`);
 
     let owners = [];
     const rec = updateRecord(targetId, (r) => {
@@ -586,14 +615,54 @@ try {
   } else if (cmd === 'log') {
     const rec = opts.tab ? await claimByName(opts.tab) : (opts.target ? readRecord(opts.target) : null);
     if (!rec) throw new Error('log 需要 --tab <名字> 或 --target <页签id>');
-    const limit = num(opts.limit, 10);
+    // 流水不截断，由调用方决定看多少：默认末尾 20 条，--limit N 指定条数，--all 全给。
+    const total = rec.log.length;
+    let entries;
+    if (opts.all) entries = rec.log;
+    else entries = rec.log.slice(-num(opts.limit, 20));
     out({
       targetId: rec.id,
       url: rec.url,
       title: rec.title,
       owners: ownersOf(rec).map((n) => ({ name: n, ...rec.claims[n] })),
-      entries: rec.log.slice(-limit),
-      totalEntries: rec.log.length,
+      totalEntries: total,
+      shown: entries.length,
+      truncated: entries.length < total,
+      ...(entries.length < total ? { note: `只显示末尾 ${entries.length} 条；要全部用 --all，指定条数用 --limit N` } : {}),
+      entries,
+    });
+
+  } else if (cmd === 'prune') {
+    // 归档时机：浏览器整个关掉的时候（stop-edge 之后会自动跑一次）。
+    // 无认领 + 页签已不在 → 移到 var/tabs/archive/，不删除（历史还在，只是不再参与归属判断）。
+    let browserUp = false;
+    try { await api('/json/version'); browserUp = true; } catch {}
+    const pages = browserUp ? await listPages().catch(() => []) : [];
+    const live = new Set(pages.map((p) => p.id));
+    const { byId, corrupt } = loadAll();
+    const archiveDir = path.join(TABS_DIR, 'archive');
+    const archived = [];
+    const kept = [];
+    for (const rec of byId.values()) {
+      const owners = ownersOf(rec);
+      if (owners.length > 0) { kept.push({ id: rec.id, why: `还有 ${owners.length} 个认领（${owners.join(', ')}）` }); continue; }
+      if (live.has(rec.id)) { kept.push({ id: rec.id, why: '页签还开着' }); continue; }
+      fs.mkdirSync(archiveDir, { recursive: true });
+      let dest = path.join(archiveDir, `${rec.id}.json`);
+      if (fs.existsSync(dest)) dest = path.join(archiveDir, `${rec.id}.${Date.now()}.json`);
+      try {
+        fs.renameSync(recFile(rec.id), dest);
+        archived.push({ id: rec.id, file: path.relative(ROOT, dest) });
+      } catch (e) { kept.push({ id: rec.id, why: `归档失败：${e.message}` }); }
+    }
+    out({
+      browserRunning: browserUp,
+      archived,
+      kept,
+      corrupt: corrupt.map((c) => c.file),
+      note: browserUp
+        ? '浏览器还开着：只归档“页签已消失且无人认领”的记录'
+        : '浏览器没开：所有无人认领的记录都归档了',
     });
 
   } else if (cmd === 'whoami') {
