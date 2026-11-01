@@ -22,7 +22,8 @@ const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, '..');
 const BASE = (process.env.CDP_BASE || 'http://127.0.0.1:9222').replace(/\/+$/, '');
 const TABS_DIR = path.join(ROOT, 'var', 'tabs');
-const ARTIFACTS = path.join(ROOT, 'var', 'artifacts');
+const WORK = path.join(ROOT, 'work');
+const SHOTS = path.join(WORK, 'shots');
 const LOCK_TIMEOUT = 3000;   // 等记录锁的上限
 
 // 下游把管道关掉（例如 | Select-Object -First 1）时安静退出，别抛未捕获异常再去抢锁。
@@ -53,7 +54,7 @@ const USAGE = `用法：
   fill <css> <文本>         填值并触发 input/change
   wait <css>                等元素出现；用 --text <片段> 则等文字出现
   frames                    列出所有 iframe（frameId + url）
-  shot [文件]               截图，默认写 var/artifacts/
+  shot [文件]               截图，默认写 work/shots/
 
 例子：
   node tools/cdp.mjs newtab --tab alice https://example.com
@@ -780,7 +781,7 @@ try {
       out({ filled: sel, ...r });
     });
   } else if (cmd === 'shot') {
-    const target = rest[0] || path.join(ARTIFACTS, `shot-${Date.now()}.png`);
+    const target = rest[0] || path.join(SHOTS, `shot-${Date.now()}.png`);
     const abs = path.isAbsolute(target) ? target : path.join(ROOT, target);
     await withPage(opts, { cmd: 'shot', detail: trim(target) }, async (s) => {
       await waitFrames(s);

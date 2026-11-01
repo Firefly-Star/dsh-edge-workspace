@@ -83,11 +83,11 @@ if ($edge) { Write-Row 'edge' 'ok' $edge }
 else { Write-Row 'edge' 'fail' 'msedge.exe not found'; $problems.Add('Edge missing') }
 
 # --- 3. dirs ---------------------------------------------------------------
-foreach ($d in @('var', 'var\logs', 'var\artifacts', 'var\tabs')) {
+foreach ($d in @('var', 'var\logs', 'var\tabs', 'work')) {
     $full = Join-Path $root $d
     if (-not (Test-Path -LiteralPath $full)) { New-Item -ItemType Directory -Path $full -Force | Out-Null }
 }
-Write-Row 'var dirs' 'ok' 'var\  var\logs  var\artifacts  var\tabs'
+Write-Row 'dirs' 'ok' 'var\  var\logs  var\tabs  work\'
 
 # --- 4. port / service -----------------------------------------------------
 $ver     = Get-CdpVersion -Base $base -TimeoutSec 3

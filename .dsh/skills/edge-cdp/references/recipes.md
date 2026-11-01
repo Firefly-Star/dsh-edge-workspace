@@ -29,7 +29,8 @@ node tools/cdp.mjs --tab alice eval "(() => {
 })()"
 ```
 
-输出是 JSON，直接重定向存 `var/artifacts/x.json` 就行。要 CSV 就让 `eval` 返回逗号分隔的字符串。
+输出是 JSON，直接重定向存 `work/<任务>/data/x.json` 就行。要 CSV 就让 `eval` 返回逗号分隔的字符串。
+（所有产出都放 `work/`，`var/` 是工具的运行时目录，别往里塞东西。）
 
 ## 3. 等动态列表加载完
 
@@ -104,8 +105,8 @@ URL 被踹回 `/login` 或正文里出现登录表单，就是掉登录了——
 表达式一长，PowerShell 的引号会把人逼疯。写到文件里：
 
 ```powershell
-# 先把 JS 写进 var/artifacts/scrape.js，然后
-node tools/cdp.mjs --tab alice eval --file var/artifacts/scrape.js
+# 先把 JS 写进 work/<任务>/scripts/scrape.js，然后
+node tools/cdp.mjs --tab alice eval --file work/我的任务/scripts/scrape.js
 ```
 
 文件里的表达式必须是**单个表达式的值**（IIFE 或 Promise 都行），不要写 `return` 语句。
@@ -113,7 +114,7 @@ node tools/cdp.mjs --tab alice eval --file var/artifacts/scrape.js
 ## 9. 截图取证
 
 ```powershell
-node tools/cdp.mjs --tab alice shot var/artifacts/lesson-2.1.png
+node tools/cdp.mjs --tab alice shot work/我的任务/shots/lesson-2.1.png
 ```
 
 返回里带 `w`/`h`，长页面会自动整页截（`captureBeyondViewport`）。
@@ -123,7 +124,7 @@ node tools/cdp.mjs --tab alice shot var/artifacts/lesson-2.1.png
 
 容易翻车的顺序是「边抓边决定抓什么」。稳妥的是三段：
 
-1. 抓目录：`eval` 返回 `[{title, url}]`，存 `var/artifacts/manifest.json`；
+1. 抓目录：`eval` 返回 `[{title, url}]`，存 `work/<任务>/data/manifest.json`；
 2. 人过一眼清单（或至少打印条数让人确认）；
 3. 逐条 `nav` → `wait` → `text`，每条落一个文件，失败的记进 `failures.json` 继续下一条。
 
@@ -145,7 +146,7 @@ node tools\cdp.mjs --tab alice eval "(() => {
 **第二步：存一张「提交前」的截图。** 出问题时只有它能证明当时是什么状态。
 
 ```powershell
-node tools\cdp.mjs --tab alice shot var\artifacts\before-submit.png
+node tools\cdp.mjs --tab alice shot work\我的任务\shots\before-submit.png
 ```
 
 **第三步：按文字点，别猜 class。** 中文按钮的 class 常是随机哈希，文字才是稳定的：
@@ -163,7 +164,7 @@ node tools\cdp.mjs --tab alice wait --text "已提交"
 **第四步：留证并报告。** 截图 + 把分数/提示语读出来，写进结论。
 
 ```powershell
-node tools\cdp.mjs --tab alice shot var\artifacts\after-submit.png
+node tools\cdp.mjs --tab alice shot work\我的任务\shots\after-submit.png
 node tools\cdp.mjs --tab alice eval "document.body.innerText.slice(0, 500)"
 ```
 

@@ -1,8 +1,13 @@
 # 浏览器 profile：含登录态与 cookie，等同密码，绝不入库
 var/profile/
 
-# 运行时状态与产物（沙箱只允许写 var\ 下面，日志也在里面）
+# 运行时状态（profile、日志、页签认领记录），工具自己管
 var/
+
+# agent 工作目录：保留骨架，内容默认不入库（抓来的数据/截图别误提交）
+work/*
+!work/.gitkeep
+!work/README.md
 
 # 本地覆盖（本机私有约定，不共享）
 AGENTS.local.md

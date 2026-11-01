@@ -29,13 +29,13 @@ node tools/cdp.mjs newtab --tab alice https://你要去的地址
 | 取正文 | `node tools/cdp.mjs --tab 名字 text` |
 | 取结构 | `node tools/cdp.mjs --tab 名字 html` |
 | 跑 JS | `node tools/cdp.mjs --tab 名字 eval "<表达式>"` |
-| 跑长脚本 | 先写文件，再 `eval --file var/artifacts/x.js` |
+| 跑长脚本 | 先写文件，再 `eval --file work/<任务>/scripts/x.js` |
 | 列表在哪个 iframe | `node tools/cdp.mjs --tab 名字 frames` |
 | 进 iframe 取正文 | `node tools/cdp.mjs --tab 名字 --frame <url 片段> text` |
 | 真实点击 | `node tools/cdp.mjs --tab 名字 click "<css>"` |
 | 填输入框 | `node tools/cdp.mjs --tab 名字 fill "<css>" "文本"` |
 | 等元素/等文字 | `node tools/cdp.mjs --tab 名字 wait "<css>"` / `wait --text "已完成"` |
-| 截图 | `node tools/cdp.mjs --tab 名字 shot var/artifacts/x.png` |
+| 截图 | `node tools/cdp.mjs --tab 名字 shot work/<任务>/shots/x.png` |
 | 收工 | `node tools/cdp.mjs close --tab 名字`（只释放你那份引用） |
 | 浏览器整个关掉后归档旧记录 | `node tools/cdp.mjs prune`（`stop-edge.ps1` 会自动跑一次） |
 
@@ -78,7 +78,8 @@ node tools/cdp.mjs --tab alice log --all    # 全部（流水不截断，你自�
 3. **提取**：能用 `text` 就别用 `html`（HTML 体积是正文的几十倍，白烧 token）。
    要结构化数据就用 `eval` 返回数组/对象，`cdp.mjs` 会自动 JSON 化。
 4. **验证**：抓完回头 `whoami` 确认 URL 没被重定向跑偏；数量对得上再往下写。
-5. **收尾**：产物写 `var/artifacts/`，`close --tab` 释放你那份引用——还有别人认领就不关页签。
+5. **收尾**：产物写 `work/<任务名>/`（**别放 `var/`，更别放根目录**），`close --tab` 释放你那份引用——还有别人认领就不关页签。
+   目录怎么分看 `work/README.md`：一个任务一个子目录，`data/` 放数据、`shots/` 放截图、`notes.md` 写结论。
 
 ## 判据与红线
 

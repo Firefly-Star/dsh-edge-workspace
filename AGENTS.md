@@ -19,7 +19,7 @@ node tools\cdp.mjs newtab --tab 我的名字 https://example.com                
 ```powershell
 node tools\cdp.mjs --tab 我的名字 text
 node tools\cdp.mjs --tab 我的名字 eval "document.title"
-node tools\cdp.mjs --tab 我的名字 shot var\artifacts\a.png
+node tools\cdp.mjs --tab 我的名字 shot work\我的任务\shots\a.png
 ```
 
 > **`CDP_TARGET` 那类环境变量在 DSH 里跨命令不保留**——每条命令都是新进程。
@@ -65,7 +65,7 @@ agent 自己起不来，请**让用户双击 `tools\start-edge.cmd`**——从�
 **唯一要守的是操作纪律**，因为提交不可逆：
 
 1. 动手前用一句话说清「我要提交什么」（哪门课、第几题、选了什么），别闷头点。
-2. 提交后立刻 `shot` 一张图并记下关键文本（分数、提示语、时间戳），存 `var\artifacts\`。
+2. 提交后立刻 `shot` 一张图并记下关键文本（分数、提示语、时间戳），存 `work\<任务名>\shots\`。
    这不是仪式——它是测试报告的证据。
 3. **失败就停，不要连环重试。** 提交按钮连点会造成重复提交，把测试数据弄脏。
 4. 页面状态不明（还在加载？弹窗没关？）先截一张再判断，别盲点。
@@ -82,13 +82,27 @@ agent 自己起不来，请**让用户双击 `tools\start-edge.cmd`**——从�
 页面内容在 iframe 里（课件、播放器常见）：先 `node tools\cdp.mjs --tab 我的名字 frames` 看有哪些 frame，
 再给读命令加 `--frame <url 片段>`。
 
+## 工作目录：只往 `work\` 写
+
+你自己产生的文件**只能写进 `work\`**，别散在仓库根目录。根目录和 `tools\` 放的是仓库自身的东西。
+
+- **一个任务一个子目录**：`work\<任务名>\`，任务名用英文短横线（`final-exam`、`chapter-3-quiz`）。
+- 目录里按需分：`data\`（抓下来的原始数据）、`shots\`（截图证据）、`scripts\`（一次性脚本）、`notes.md`（结论）。
+- **多个 agent 做同一个任务 → 共用同一个任务目录**，不要各建一个；用文件名前缀区分作者（`alice-notes.md`）。
+  任务是协作的边界，agent 不是。
+- `work\` 的内容默认**不入库**（`.gitignore` 只保留目录骨架和 `README.md`），抓来的数据、含登录态的截图
+  不会被误提交；确实要入库用 `git add -f`。
+- 一个任务收尾时，`notes.md` 要能让下一个人直接看懂：做了什么、关键数据在哪、有什么遗留。
+
+`var\` 不是给你放产出的：那是工具的运行时目录（profile、日志、认领记录），由工具自己管。
+
 ## 工具约定（改 `tools\` 之前必读）
 
 1. **`.ps1` 必须是纯 ASCII。** Windows PowerShell 5.1 把无 BOM 的 UTF-8 当 ANSI 读，中文字面量会让整个脚本解析失败；
    而编辑工具会把 BOM 吃掉。所以脚本里一律写英文消息，中文只留在 `.md` 文档里。
 2. **只用 PowerShell 5.1 语法。** 别用 `??`、`?.`、三元运算符——5.1 不支持。
-3. **沙箱只允许写 `var\` 下面。** `tools\` 和根目录文件对子进程是只读的（实测）。所以日志、profile、产物、
-   页签记录全在 `var\` 里——新加的东西也别往外放。
+3. **写文件只认两个位置。** 你的产出写 `work\`（见上一节）；`var\` 由工具自己写。
+   `tools\` 和仓库根目录是仓库自身的文件，子进程写它们要更高权限，也别往里放产出。
 4. **改完必须真跑一次。** `powershell -NoProfile -ExecutionPolicy Bypass -File tools\doctor.ps1` 能跑通才算改完。
    "看着对"不算：本次就有两个脚本纸面上完全正确、一跑就炸。
 
@@ -99,9 +113,9 @@ agent 自己起不来，请**让用户双击 `tools\start-edge.cmd`**——从�
 | `tools\cdp.mjs` | 唯一客户端，零依赖，要求 Node >= 22（全局 WebSocket） |
 | `tools\doctor.ps1` `start-edge.*` `stop-edge.*` | 体检 / 启动 / 关闭。`.cmd` 是给用户双击的 |
 | `var\profile\` | 浏览器配置＝登录态。gitignored，别碰 |
-| `var\artifacts\` | 截图、导出。产物一律放这里，别撒在根目录 |
 | `var\tabs\` | 页签认领记录 + 操作流水（`<页签id>.json`，多人共享时按引用计数） |
 | `var\logs\` | Edge 启动日志（排查受限沙箱就看它） |
+| `work\` | **agent 产出目录**，默认不入库。一个任务一个子目录，规范见 `work\README.md` |
 | `.dsh\skills\edge-cdp\` | 操作手册，按需加载（配方、完整坑列表、报错对照） |
 
 手册在 `.dsh\skills\edge-cdp\SKILL.md`。这份文件只放「每轮都必须知道」的东西，细节别往这里加。
