@@ -33,7 +33,7 @@ const USAGE = `用法：
   text                      正文 innerText
   html                      整页 outerHTML
   eval <表达式>             在页面求值（或用 --file 从文件读）
-  click <css>              真实鼠标点击（不是 el.click）
+  click <css>              真实鼠标点击（不是 el.click）；也可 click --text <按钮文字>
   fill <css> <文本>         填值并触发 input/change
   wait <css>                等元素出现；用 --text <片段> 则等文字出现
   frames                    列出所有 iframe（frameId + url）
@@ -377,21 +377,34 @@ try {
     });
   } else if (cmd === 'click') {
     const sel = rest[0];
-    if (!sel) throw new Error('click 需要 css 选择器');
+    if (!sel && !opts.text) throw new Error('click 需要 css 选择器，或 --text <按钮文字>');
+    const label = sel || `按钮 "${opts.text}"`;
+    // 按文字找按钮：先找真正可点的元素，再退到只含文字的叶子节点——避免误点包住整页的大容器。
+    const finder = sel
+      ? `document.querySelector(${JSON.stringify(sel)})`
+      : `(() => {
+          const want = ${JSON.stringify(String(opts.text))};
+          const norm = (e) => (e.innerText || e.value || '').trim();
+          const pool = [...document.querySelectorAll('button,input[type=submit],input[type=button],a,[role=button]')];
+          return pool.find((e) => norm(e) === want)
+            || pool.find((e) => norm(e).includes(want))
+            || [...document.querySelectorAll('span,div,li,label,td')].filter((e) => e.children.length === 0).find((e) => norm(e) === want)
+            || null;
+        })()`;
     await withPage(opts, async (s) => {
       const box = await evaluate(s, `(() => {
-        const el = document.querySelector(${JSON.stringify(sel)});
+        const el = ${finder};
         if (!el) return { ok: false, why: 'not found' };
         el.scrollIntoView({ block: 'center', inline: 'center' });
         const b = el.getBoundingClientRect();
         if (!b.width || !b.height) return { ok: false, why: 'zero size (display:none?)' };
         return { ok: true, x: b.left + b.width / 2, y: b.top + b.height / 2, tag: el.tagName, text: (el.innerText || el.value || '').slice(0, 60) };
       })()`);
-      if (!box || !box.ok) throw new Error(`点不到 ${sel}：${(box && box.why) || '页面没有返回元素信息'}`);
+      if (!box || !box.ok) throw new Error(`点不到 ${label}：${(box && box.why) || '页面没有返回元素信息'}`);
       await s.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y });
       await s.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x, y: box.y, button: 'left', clickCount: 1 });
       await s.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x, y: box.y, button: 'left', clickCount: 1 });
-      out({ clicked: sel, at: { x: Math.round(box.x), y: Math.round(box.y) }, tag: box.tag, text: box.text });
+      out({ clicked: label, at: { x: Math.round(box.x), y: Math.round(box.y) }, tag: box.tag, text: box.text });
     });
   } else if (cmd === 'fill') {
     const sel = rest[0];

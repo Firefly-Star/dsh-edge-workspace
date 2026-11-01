@@ -123,3 +123,49 @@ node tools/cdp.mjs --tab alice shot var/artifacts/lesson-2.1.png
 3. 逐条 `nav` → `wait` → `text`，每条落一个文件，失败的记进 `failures.json` 继续下一条。
 
 中途出错不要重头再来——清单里已有 `done` 标记，跳过即可。
+
+## 11. 提交类动作（不可逆，固定按这个顺序）
+
+勾任务点、交测验都是本工作区的正常任务，但提交按钮点一次就是一次，重复提交会把测试数据弄脏。四步走。
+
+**第一步：先看清要交什么。** 别上来就点。
+
+```powershell
+node tools\cdp.mjs --tab alice eval "(() => {
+  const qs = [...document.querySelectorAll('.question, .TiMu, .subject, li')];
+  return qs.slice(0, 20).map((n, i) => ({ i, text: (n.innerText || '').replace(/\s+/g, ' ').slice(0, 100) }));
+})()"
+```
+
+**第二步：存一张「提交前」的截图。** 出问题时只有它能证明当时是什么状态。
+
+```powershell
+node tools\cdp.mjs --tab alice shot var\artifacts\before-submit.png
+```
+
+**第三步：按文字点，别猜 class。** 中文按钮的 class 常是随机哈希，文字才是稳定的：
+
+```powershell
+node tools\cdp.mjs --tab alice click --text "提交"
+```
+
+点完等结果文字出现（不是死等固定秒数）：
+
+```powershell
+node tools\cdp.mjs --tab alice wait --text "已提交"
+```
+
+**第四步：留证并报告。** 截图 + 把分数/提示语读出来，写进结论。
+
+```powershell
+node tools\cdp.mjs --tab alice shot var\artifacts\after-submit.png
+node tools\cdp.mjs --tab alice eval "document.body.innerText.slice(0, 500)"
+```
+
+### 注意
+
+- 提交后**不要**因为没看到预期文字就再点一次。先 `shot` 看一眼——可能已经在「提交成功」页上了。
+- 二次确认弹窗用 `click --text "确定"` 点，别用 `eval "confirm()"` 糊弄：那绕过真实交互路径，测不到真问题。
+- 一次交多题时，先数一遍已选项和题目数对不对得上，再点提交。
+- `click --text` 先找 `button/a/[role=button]`，找不到才退到只含文字的叶子节点——所以按钮里嵌了图标也点得中；
+  但页面有两个同文字按钮时只会点第一个，需要精确时改用 css。
